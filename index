@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Memo</title>
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --panel: #ffffff;
+            --accent: #2563eb;
+            --accent-bg: #eff6ff;
+            --text: #334155;
+            --muted: #94a3b8;
+            --border: #e2e8f0;
+            --postit-f: #f8fafc;
+            --postit-b: #f0f6ff;
+            --radius: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0; padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+        }
+
+        /* 헤더 내비게이션 */
+        header {
+            background: var(--panel);
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 50;
+        }
+
+        /* 팝업 트리거 버튼 */
+        #selector-trigger {
+            font-size: 1rem;
+            font-weight: 700;
+            background: var(--accent-bg);
+            color: var(--accent);
+            border: none;
+            padding: 8px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .ctrl-box { display: flex; align-items: center; gap: 10px; }
+
+        .select-min {
+            padding: 8px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--panel); font-size: 0.85rem; color: var(--text); outline: none;
+        }
+
+        .btn-add {
+            width: 36px; height: 36px; border-radius: 8px; border: none;
+            background: var(--accent); color: white; font-size: 1.2rem;
+            display: flex; justify-content: center; align-items: center; cursor: pointer;
+        }
+
+        .btn-shuffle {
+            padding: 8px 12px; border-radius: 8px; border: none;
+            background: #64748b; color: white; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+        }
+
+        /* 가상 보드판 */
+        #board {
+            flex: 1; padding: 20px; overflow-y: auto;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 20px; align-content: start;
+        }
+
+        /* 미니멀 포스트잇 구조 */
+        .card-wrap { perspective: 1000px; height: 260px; }
+        .card-inner {
+            width: 100%; height: 100%; position: relative;
+            transform-style: preserve-3d; transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid var(--border); border-radius: 6px;
+        }
+        .card-wrap.flipped .card-inner { transform: rotateY(180deg); }
+
+        .card-face {
+            position: absolute; width: 100%; height: 100%;
+            backface-visibility: hidden; -webkit-backface-visibility: hidden;
+            padding: 20px; display: flex; flex-direction: column; justify-content: space-between;
+        }
+        .card-front { background: var(--postit-f); }
+        .card-back { background: var(--postit-b); transform: rotateY(180deg); }
+
+        .card-count {
+            position: absolute; top: 16px; right: 20px;
+            font-size: 0.75rem; font-weight: 500; color: var(--muted); opacity: 0.7;
+        }
+
+        .card-text {
+            font-size: 1rem; line-height: 1.5; flex: 1; margin-top: 10px;
+            overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+        }
+        .card-text strong { font-weight: 800; color: #000000; }
+
+        .card-footer {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);
+        }
+
+        .status-box { display: flex; gap: 4px; }
+        .status-btn {
+            border: 1px solid var(--border); background: var(--panel);
+            padding: 3px 6px; border-radius: 4px; font-weight: 700; font-size: 0.75rem; color: var(--muted); cursor: pointer;
+        }
+        .status-btn.v-on { background: #fee2e2; color: #ef4444; border-color: #fca5a5; }
+        .status-btn.o-on { background: #d1fae5; color: #10b981; border-color: #a7f3d0; }
+
+        .opt-box { display: flex; gap: 8px; }
+        .opt-btn { background: none; border: none; font-size: 0.75rem; color: var(--muted); cursor: pointer; }
+        .opt-btn:hover { color: var(--text); }
+
+        /* 기본 레이어 팝업/모달 상위구조 */
+        .layer-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(15, 23, 42, 0.15); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            display: none; justify-content: center; align-items: center; z-index: 100;
+        }
+
+        /* 작성/수정 시트 */
+        .sheet {
+            background: var(--panel); width: 440px; max-width: 90%; border-radius: var(--radius);
+            padding: 20px; border: 1px solid var(--border);
+        }
+        .sheet-title { font-size: 1rem; font-weight: 800; margin-bottom: 16px; text-align: center; color: var(--muted); }
+        .field-group { margin-bottom: 12px; }
+        .field-group label { display: block; font-size: 0.8rem; font-weight: 700; margin-bottom: 4px; color: var(--muted); }
+        .field-group textarea, .field-group select {
+            width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px;
+            font-size: 15px; outline: none; background: var(--bg); resize: none;
+        }
+        .field-group textarea { height: 90px; }
+        .sheet-footer { display: flex; justify-content: flex-end; gap: 6px; margin-top: 16px; }
+
+        .btn-base { padding: 8px 14px; border: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+        .btn-cancel { background: #e2e8f0; color: #475569; }
+        .btn-submit { background: var(--accent); color: white; }
+
+        /* 과목/목차 대형 선택 팝업창 */
+        .picker-box {
+            background: var(--panel); width: 340px; max-width: 90%; max-height: 80vh; 
+            border-radius: var(--radius); display: flex; flex-direction: column; overflow: hidden;
+        }
+        .picker-header {
+            padding: 14px; font-size: 0.9rem; font-weight: 700; text-align: center; 
+            border-bottom: 1px solid var(--border); background: var(--bg);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .picker-body { flex: 1; overflow-y: auto; padding: 10px; }
+        
+        .picker-item {
+            padding: 10px; border-radius: 6px; font-size: 0.9rem; cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;
+        }
+        .picker-item:hover { background: var(--bg); }
+        .picker-item.item-test { color: #ef4444; font-weight: 700; background: #fff5f5; }
+        .picker-item.item-sub { font-weight: 700; color: var(--text); padding-left: 6px; background: #f1f5f9; margin-top: 6px;}
+        .picker-item.item-ch { padding-left: 20px; color: #475569; font-size: 0.85rem; }
+        .picker-item.selected { background: var(--accent-bg) !important; color: var(--accent) !important; }
+
+        .empty { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 60px 20px; font-size: 0.9rem; }
+        .btn-text-min { background: none; border: none; color: var(--muted); font-size: 0.75rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <button id="selector-trigger" onclick="openPicker()">선택</button>
+        <div class="ctrl-box">
+            <button class="btn-shuffle" id="shuffle-btn" onclick="shuffleTestCards()" style="display:none;">shuffle</button>
+            <select class="select-min" id="sort-select" onchange="renderBoard()">
+                <option value="latest">최신순</option>
+                <option value="vRank">오답순</option>
+            </select>
+            <button class="btn-add" id="add-btn" onclick="openCardModal(false)" style="display:none;">+</button>
+        </div>
+    </header>
+
+    <div id="board"></div>
+
+    <div id="card-modal" class="layer-overlay" onclick="closeModalOutside(event, 'card-modal')">
+        <div class="sheet">
+            <div class="sheet-title" id="modal-title">+</div>
+            <input type="hidden" id="edit-id">
+            <input type="hidden" id="edit-sub-ch">
+
+            <div class="field-group" id="modal-struct-select-group">
+                <label>목차 선택</label>
+                <select id="form-struct-target"></select>
+            </div>
+            <div class="field-group">
+                <label>앞</label>
+                <textarea id="form-q"></textarea>
+            </div>
+            <div class="field-group">
+                <label>뒤</label>
+                <textarea id="form-a"></textarea>
+            </div>
+            <div class="sheet-footer">
+                <button class="btn-base btn-cancel" onclick="closeModal('card-modal')">닫기</button>
+                <button class="btn-base btn-submit" onclick="saveCardData()">완료</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="picker-modal" class="layer-overlay" onclick="closeModalOutside(event, 'picker-modal')">
+        <div class="picker-box">
+            <div class="picker-header">
+                <span>목차 이동</span>
+                <button class="btn-text-min" onclick="openConfigModal()">[구조 설정]</button>
+            </div>
+            <div class="picker-body" id="picker-list-container"></div>
+        </div>
+    </div>
+
+    <div id="config-modal" class="layer-overlay" onclick="closeModalOutside(event, 'config-modal')">
+        <div class="sheet">
+            <div class="sheet-title">구조 설정</div>
+            <div class="field-group">
+                <label>과목 추가</label>
+                <div style="display:flex; gap:4px;">
+                    <input type="text" id="config-new-sub" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:6px;" placeholder="과목명">
+                    <button class="btn-base btn-submit" onclick="addConfigSubject()">등록</button>
+                </div>
+            </div>
+            <div class="field-group">
+                <label>목차 추가 (선택된 과목 하위로 포함)</label>
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <select id="config-sub-select" style="padding:8px; border:1px solid var(--border); border-radius:6px;"></select>
+                    <div style="display:flex; gap:4px;">
+                        <input type="text" id="config-new-ch" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:6px;" placeholder="목차명">
+                        <button class="btn-base btn-submit" onclick="addConfigChapter()">등록</button>
+                    </div>
+                </div>
+            </div>
+            <div class="sheet-footer">
+                <button class="btn-base btn-cancel" onclick="closeModal('config-modal'); openPicker();">돌아가기</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 데이터 초기 세팅
+        let structure = JSON.parse(localStorage.getItem('noteStructure')) || [
+            { id: "sub1", name: "기본 과목", chapters: [{ id: "ch1", name: "기본 목차" }] }
+        ];
+        let cards = JSON.parse(localStorage.getItem('noteCards')) || [];
+        
+        let currentMode = localStorage.getItem('noteCurrentMode') || 'ch1'; // 'test' 또는 'chapterId'
+        let currentSubId = localStorage.getItem('noteCurrentSubId') || 'sub1';
+
+        window.onload = function() {
+            initApp();
+        };
+
+        function saveState() {
+            localStorage.setItem('noteStructure', JSON.stringify(structure));
+            localStorage.setItem('noteCards', JSON.stringify(cards));
+            localStorage.setItem('noteCurrentMode', currentMode);
+            localStorage.setItem('noteCurrentSubId', currentSubId);
+        }
+
+        function initApp() {
+            updateTriggerButtonText();
+            renderBoard();
+            saveState();
+        }
+
+        function updateTriggerButtonText() {
+            const trigger = document.getElementById('selector-trigger');
+            if (currentMode === 'test') {
+                trigger.innerText = "오답 테스트";
+                document.getElementById('add-btn').style.display = 'none';
+                document.getElementById('shuffle-btn').style.display = 'block';
+            } else {
+                let foundSub = structure.find(s => s.id === currentSubId);
+                let foundCh = foundSub ? foundSub.chapters.find(c => c.id === currentMode) : null;
+                trigger.innerText = foundCh ? `${foundSub.name} > ${foundCh.name}` : "선택";
+                document.getElementById('add-btn').style.display = 'block';
+                document.getElementById('shuffle-btn').style.display = 'none';
+            }
+        }
+
+        function openPicker() {
+            document.getElementById('picker-modal').style.display = 'flex';
+            const container = document.getElementById('picker-list-container');
+            container.innerHTML = '';
+
+            // 오답 테스트 항목
+            let totalVCount = cards.filter(c => c.v > 0 && !c.o).length;
+            const testItem = document.createElement('div');
+            testItem.className = `picker-item item-test ${currentMode === 'test' ? 'selected' : ''}`;
+            testItem.innerHTML = `<span>오답 테스트</span><span style="font-size:0.8rem; font-weight:normal;">${totalVCount}</span>`;
+            testItem.onclick = () => { currentMode = 'test'; closeAllAndRefresh(); };
+            container.appendChild(testItem);
+
+            // 구조 매핑
+            structure.forEach(sub => {
+                const subItem = document.createElement('div');
+                subItem.className = 'picker-item item-sub';
+                subItem.innerHTML = `<span>${sub.name}</span><button class="btn-text-min" onclick="deleteStructureElement(event, 'sub', '${sub.id}')">삭제</button>`;
+                container.appendChild(subItem);
+
+                sub.chapters.forEach(ch => {
+                    const chItem = document.createElement('div');
+                    chItem.className = `picker-item item-ch ${currentMode === ch.id ? 'selected' : ''}`;
+                    chItem.innerHTML = `<span>• ${ch.name}</span><button class="btn-text-min" onclick="deleteStructureElement(event, 'ch', '${sub.id}', '${ch.id}')">삭제</button>`;
+                    chItem.onclick = (e) => {
+                        if(e.target.tagName !== 'BUTTON') {
+                            currentMode = ch.id;
+                            currentSubId = sub.id;
+                            closeAllAndRefresh();
+                        }
+                    };
+                    container.appendChild(chItem);
+                });
+            });
+        }
+
+        function deleteStructureElement(e, type, subId, chId) {
+            e.stopPropagation();
+            if(!confirm("삭제하시겠습니까? 연동된 포스트잇이 함께 유실될 수 있습니다.")) return;
+            if(type === 'sub') {
+                structure = structure.filter(s => s.id !== subId);
+                cards = cards.filter(c => c.subId !== subId);
+            } else {
+                let sub = structure.find(s => s.id === subId);
+                if(sub) sub.chapters = sub.chapters.filter(c => c.id !== chId);
+                cards = cards.filter(c => c.chId !== chId);
+            }
+            if(currentMode === chId || currentSubId === subId) {
+                currentMode = 'test';
+            }
+            saveState();
+            openPicker();
+            renderBoard();
+        }
+
+        function closeAllAndRefresh() {
+            closeModal('picker-modal');
+            updateTriggerButtonText();
+            renderBoard();
+            saveState();
+        }
+
+        function renderBoard(forcedCards = null) {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            const sort = document.getElementById('sort-select').value;
+
+            let targetCards = [];
+            if (forcedCards) {
+                targetCards = forcedCards;
+            } else if (currentMode === 'test') {
+                targetCards = cards.filter(c => c.v > 0 && !c.o);
+            } else {
+                targetCards = cards.filter(c => c.chId === currentMode);
+            }
+
+            if(targetCards.length === 0) {
+                board.innerHTML = `<div class="empty">비어 있습니다.</div>`;
+                return;
+            }
+
+            // 정렬 처리 (강제 인입 배열이 아닐 시에만 작동)
+            if(!forcedCards) {
+                if(sort === 'latest') targetCards.sort((a,b) => b.time - a.time);
+                else if(sort === 'vRank') targetCards.sort((a,b) => b.v - a.v);
+            }
+
+            targetCards.forEach(card => {
+                const wrap = document.createElement('div');
+                wrap.className = 'card-wrap';
+                
+                wrap.addEventListener('click', function(e) {
+                    if(!e.target.closest('.card-footer')) {
+                        const state = !this.classList.contains('flipped');
+                        this.classList.toggle('flipped');
+                        if (state) {
+                            card.count = (card.count || 0) + 1;
+                            let real = cards.find(c => c.id === card.id);
+                            if(real) real.count = card.count;
+                            saveState();
+                            wrap.querySelectorAll('.card-count').forEach(b => b.innerText = `${card.count}회독`);
+                        }
+                    }
+                });
+
+                let vMark = 'V';
+                if(card.v === 2) vMark = 'VV';
+                if(card.v === 3) vMark = 'VVV';
+
+                wrap.innerHTML = `
+                    <div class="card-inner">
+                        <div class="card-face card-front">
+                            <div class="card-count">${card.count || 0}회독</div>
+                            <div class="card-text">${formatMarkup(card.question)}</div>
+                            <div class="card-footer">
+                                <div class="status-box">
+                                    <button class="status-btn v-btn ${card.v > 0 ? 'v-on' : ''}">${vMark}</button>
+                                    <button class="status-btn o-btn ${card.o ? 'o-on' : ''}">O</button>
+                                </div>
+                                <div class="opt-box">
+                                    <button class="opt-btn edit-b">수정</button>
+                                    <button class="opt-btn del-b">삭제</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-face card-back">
+                            <div class="card-count">${card.count || 0}회독</div>
+                            <div class="card-text">${formatMarkup(card.answer)}</div>
+                            <div class="card-footer">
+                                <div class="status-box">
+                                    <button class="status-btn v-btn ${card.v > 0 ? 'v-on' : ''}">${vMark}</button>
+                                    <button class="status-btn o-btn ${card.o ? 'o-on' : ''}">O</button>
+                                </div>
+                                <div class="opt-box">
+                                    <button class="opt-btn edit-b">수정</button>
+                                    <button class="opt-btn del-b">삭제</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // 오답 단추 핸들러
+                wrap.querySelectorAll('.v-btn').forEach(b => {
+                    b.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        let real = cards.find(c => c.id === card.id);
+                        if(real) {
+                            real.v = ((real.v || 0) + 1) % 4;
+                            if(real.v > 0) real.o = false;
+                            saveState(); renderBoard();
+                        }
+                    });
+                });
+
+                // 완독 단추 핸들러
+                wrap.querySelectorAll('.o-btn').forEach(b => {
+                    b.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        let real = cards.find(c => c.id === card.id);
+                        if(real) {
+                            real.o = !real.o;
+                            if(real.o) real.v = 0;
+                            saveState(); renderBoard();
+                        }
+                    });
+                });
+
+                wrap.querySelectorAll('.edit-b').forEach(b => {
+                    b.addEventListener('click', (e) => { e.stopPropagation(); openCardModal(true, card.id); });
+                });
+                wrap.querySelectorAll('.del-b').forEach(b => {
+                    b.addEventListener('click', (e) => { e.stopPropagation(); deleteCard(card.id); });
+                });
+
+                board.appendChild(wrap);
+            });
+        }
+
+        function shuffleTestCards() {
+            let testSet = cards.filter(c => c.v > 0 && !c.o);
+            for (let i = testSet.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [testSet[i], testSet[j]] = [testSet[j], testSet[i]];
+            }
+            renderBoard(testSet);
+        }
+
+        function openCardModal(isEdit = false, id = null) {
+            document.getElementById('card-modal').style.display = 'flex';
+            
+            // 구조 셀렉트 박스 동적 빌드
+            const sel = document.getElementById('form-struct-target');
+            sel.innerHTML = '';
+            structure.forEach(s => {
+                s.chapters.forEach(c => {
+                    let opt = document.createElement('option');
+                    opt.value = `${s.id}|${c.id}`;
+                    opt.innerText = `${s.name} - ${c.name}`;
+                    sel.appendChild(opt);
+                });
+            });
+
+            if(isEdit) {
+                document.getElementById('modal-title').innerText = '수정';
+                let c = cards.find(item => item.id === id);
+                if(c) {
+                    document.getElementById('edit-id').value = c.id;
+                    document.getElementById('form-q').value = c.question;
+                    document.getElementById('form-a').value = c.answer;
+                    sel.value = `${c.subId}|${c.chId}`;
+                    document.getElementById('modal-struct-select-group').style.display = 'block';
+                }
+            } else {
+                document.getElementById('modal-title').innerText = '+';
+                document.getElementById('edit-id').value = '';
+                document.getElementById('form-q').value = '';
+                document.getElementById('form-a').value = '';
+                sel.value = `${currentSubId}|${currentMode}`;
+                document.getElementById('modal-struct-select-group').style.display = 'none';
+            }
+        }
+
+        function saveCardData() {
+            const q = document.getElementById('form-q').value.trim();
+            const a = document.getElementById('form-a').value.trim();
+            const id = document.getElementById('edit-id').value;
+            const selVal = document.getElementById('form-struct-target').value.split('|');
+
+            if(!q || !a) return alert('내용을 채워주세요.');
+
+            if(id) {
+                let c = cards.find(item => item.id === parseInt(id));
+                if(c) {
+                    c.question = q; c.answer = a;
+                    c.subId = selVal[0]; c.chId = selVal[1];
+                }
+            } else {
+                cards.push({
+                    id: Date.now(), subId: currentSubId, chId: currentMode,
+                    question: q, answer: a, v: 0, o: false, count: 0, time: Date.now()
+                });
+            }
+            saveState(); renderBoard(); closeModal('card-modal');
+        }
+
+        function deleteCard(id) {
+            if(!confirm('삭제하시겠습니까?')) return;
+            cards = cards.filter(c => c.id !== id);
+            saveState(); renderBoard();
+        }
+
+        function openConfigModal() {
+            closeModal('picker-modal');
+            document.getElementById('config-modal').style.display = 'flex';
+            const sel = document.getElementById('config-sub-select');
+            sel.innerHTML = '';
+            structure.forEach(s => {
+                let opt = document.createElement('option');
+                opt.value = s.id; opt.innerText = s.name;
+                sel.appendChild(opt);
+            });
+        }
+
+        function addConfigSubject() {
+            const input = document.getElementById('config-new-sub');
+            const name = input.value.trim();
+            if(!name) return;
+            structure.push({ id: 'sub_' + Date.now(), name: name, chapters: [] });
+            input.value = ''; saveState(); openConfigModal();
+        }
+
+        function addConfigChapter() {
+            const subId = document.getElementById('config-sub-select').value;
+            const input = document.getElementById('config-new-ch');
+            const name = input.value.trim();
+            if(!subId || !name) return;
+            
+            let sub = structure.find(s => s.id === subId);
+            if(sub) {
+                sub.chapters.push({ id: 'ch_' + Date.now(), name: name });
+                input.value = ''; saveState(); openConfigModal();
+            }
+        }
+
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        function closeModalOutside(e, id) { if(e.target === document.getElementById(id)) closeModal(id); }
+
+        function sanitize(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        function formatMarkup(text) {
+            let html = sanitize(text);
+            return html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        }
+    </script>
+</body>
+</html>
